@@ -15,6 +15,8 @@ import com.droponair.sdk.DropOnAirListener
 import com.droponair.sdk.model.CallEvent
 import com.droponair.sdk.model.Group
 import com.droponair.sdk.model.Message
+import com.droponair.sdk.model.MessageDelete
+import com.droponair.sdk.model.MessageEdit
 import com.droponair.sdk.model.GroupMessage
 import com.droponair.sdk.model.GroupCallEvent
 import com.example.droponairdemo.R
@@ -43,7 +45,7 @@ class ChatActivity : AppCompatActivity() {
         val btnGroups  = findViewById<Button>(R.id.btnGroups)
         val tvStatus   = findViewById<TextView>(R.id.tvStatus)
 
-        adapter = ChatAdapter(messages, myUserId)
+        adapter = ChatAdapter(messages, myUserId) { pos -> showMessageActions(pos) }
         rv.adapter = adapter
         rv.layoutManager = LinearLayoutManager(this).apply { stackFromEnd = true }
 
@@ -62,6 +64,28 @@ class ChatActivity : AppCompatActivity() {
                 messages.add(ChatItem(message.messageId, message.fromUserId, message.text, message.timestamp, isSelf = false))
                 adapter.notifyItemInserted(messages.lastIndex)
                 rv.scrollToPosition(messages.lastIndex)
+            }
+
+            override fun onMessageEdit(edit: MessageEdit) {
+                runOnUiThread {
+                    val idx = messages.indexOfFirst { it.id == edit.originalMessageId }
+                    if (idx >= 0) {
+                        val prev = messages[idx]
+                        messages[idx] = prev.copy(text = edit.plaintext, edited = true, deleted = false)
+                        adapter.notifyItemChanged(idx)
+                    }
+                }
+            }
+
+            override fun onMessageDelete(delete: MessageDelete) {
+                runOnUiThread {
+                    val idx = messages.indexOfFirst { it.id == delete.originalMessageId }
+                    if (idx >= 0) {
+                        val prev = messages[idx]
+                        messages[idx] = prev.copy(text = "(message deleted)", deleted = true, edited = false)
+                        adapter.notifyItemChanged(idx)
+                    }
+                }
             }
 
             override fun onError(error: Throwable) {
@@ -125,8 +149,8 @@ class ChatActivity : AppCompatActivity() {
             etMsg.text.clear()
             lifecycleScope.launch {
                 try {
-                    DropOnAir.getInstance().sendMessage(to, txt)
-                    messages.add(ChatItem(System.currentTimeMillis().toString(), myUserId, txt, System.currentTimeMillis(), isSelf = true))
+                    val messageId = DropOnAir.getInstance().sendMessage(to, txt)
+                    messages.add(ChatItem(messageId, myUserId, txt, System.currentTimeMillis(), isSelf = true, toUserId = to))
                     adapter.notifyItemInserted(messages.lastIndex)
                     rv.scrollToPosition(messages.lastIndex)
                 } catch (e: Exception) {
@@ -227,6 +251,65 @@ class ChatActivity : AppCompatActivity() {
         super.onDestroy()
         DropOnAir.getInstance().setListener(null)
     }
+
+    private fun showMessageActions(position: Int) {
+        val item = messages.getOrNull(position) ?: return
+        if (!item.isSelf || item.deleted) return
+        val to = item.toUserId
+        if (to.isNullOrEmpty() || item.groupId != null) return
+
+        AlertDialog.Builder(this)
+            .setTitle("Message")
+            .setItems(arrayOf("Edit", "Delete for everyone", "Delete for me")) { _, which ->
+                when (which) {
+                    0 -> promptEditMessage(item.id, to, item.text)
+                    1 -> performDelete(item.id, to, "FOR_EVERYONE")
+                    2 -> performDelete(item.id, to, "FOR_ME")
+                }
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private fun promptEditMessage(messageId: String, toUserId: String, currentText: String) {
+        val input = EditText(this).apply { setText(currentText) }
+        AlertDialog.Builder(this)
+            .setTitle("Edit message")
+            .setView(input)
+            .setPositiveButton("Save") { _, _ ->
+                val next = input.text.toString().trim()
+                if (next.isEmpty() || next == currentText) return@setPositiveButton
+                lifecycleScope.launch {
+                    try {
+                        DropOnAir.getInstance().editMessage(messageId, toUserId, next)
+                        val idx = messages.indexOfFirst { it.id == messageId }
+                        if (idx >= 0) {
+                            messages[idx] = messages[idx].copy(text = next, edited = true, deleted = false)
+                            adapter.notifyItemChanged(idx)
+                        }
+                    } catch (e: Exception) {
+                        AlertDialog.Builder(this@ChatActivity).setMessage("Edit failed: ${e.message}").show()
+                    }
+                }
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private fun performDelete(messageId: String, toUserId: String, scope: String) {
+        lifecycleScope.launch {
+            try {
+                DropOnAir.getInstance().deleteMessage(messageId, toUserId, scope)
+                val idx = messages.indexOfFirst { it.id == messageId }
+                if (idx >= 0) {
+                    messages[idx] = messages[idx].copy(text = "(message deleted)", deleted = true, edited = false)
+                    adapter.notifyItemChanged(idx)
+                }
+            } catch (e: Exception) {
+                AlertDialog.Builder(this@ChatActivity).setMessage("Delete failed: ${e.message}").show()
+            }
+        }
+    }
 }
 
 data class ChatItem(
@@ -236,4 +319,7 @@ data class ChatItem(
     val timestamp: Long,
     val isSelf: Boolean,
     val groupId: String? = null,
+    val toUserId: String? = null,
+    val edited: Boolean = false,
+    val deleted: Boolean = false,
 )

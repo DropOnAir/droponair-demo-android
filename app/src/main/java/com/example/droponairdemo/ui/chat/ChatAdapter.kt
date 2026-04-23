@@ -11,6 +11,7 @@ import java.util.*
 class ChatAdapter(
     private val items: List<ChatItem>,
     private val myUserId: String,
+    private val onItemLongPress: ((position: Int) -> Unit)? = null,
 ) : RecyclerView.Adapter<ChatAdapter.VH>() {
 
     private val timeFmt = SimpleDateFormat("HH:mm", Locale.getDefault())
@@ -43,16 +44,39 @@ class ChatAdapter(
         h.tvSender.visibility = if (isSelf) View.GONE else View.VISIBLE
         h.tvSender.text = item.fromUserId
         h.tvText.text   = item.text
-        h.tvTime.text   = timeFmt.format(Date(item.timestamp))
+        val timeSuffix  = if (item.edited && !item.deleted) "  · edited" else ""
+        h.tvTime.text   = timeFmt.format(Date(item.timestamp)) + timeSuffix
 
-        // Style: self = blue, other = grey
-        h.root.setBackgroundColor(if (isSelf) Color.parseColor("#3880ff") else Color.parseColor("#f0f0f0"))
-        h.tvText.setTextColor(if (isSelf) Color.WHITE else Color.BLACK)
-        h.tvTime.setTextColor(if (isSelf) Color.WHITE else Color.BLACK)
+        // Style: deleted = grey italic, self = blue, other = light grey
+        when {
+            item.deleted -> {
+                h.root.setBackgroundColor(Color.parseColor("#dddddd"))
+                h.tvText.setTextColor(Color.parseColor("#666666"))
+                h.tvTime.setTextColor(Color.parseColor("#666666"))
+            }
+            isSelf -> {
+                h.root.setBackgroundColor(Color.parseColor("#3880ff"))
+                h.tvText.setTextColor(Color.WHITE)
+                h.tvTime.setTextColor(Color.WHITE)
+            }
+            else -> {
+                h.root.setBackgroundColor(Color.parseColor("#f0f0f0"))
+                h.tvText.setTextColor(Color.BLACK)
+                h.tvTime.setTextColor(Color.BLACK)
+            }
+        }
 
         // Align right for self
         (h.root.layoutParams as RecyclerView.LayoutParams).also {
             if (isSelf) it.leftMargin = 120 else it.rightMargin = 120
+        }
+
+        // Long-press only on self-sent, not-yet-deleted DM messages
+        h.root.setOnLongClickListener {
+            if (isSelf && !item.deleted) {
+                onItemLongPress?.invoke(h.bindingAdapterPosition)
+                true
+            } else false
         }
     }
 }
