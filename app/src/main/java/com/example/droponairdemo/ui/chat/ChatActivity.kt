@@ -37,6 +37,7 @@ class ChatActivity : AppCompatActivity() {
     private var activeCallId: String? = null
     private var activeGroupId: String? = null
     private var pendingAttachments: List<AttachmentRef> = emptyList()
+    private var amSharingScreen: Boolean = false
 
     private val pickAttachment = registerForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
         if (uri != null) onAttachmentPicked(uri)
@@ -144,6 +145,12 @@ class ChatActivity : AppCompatActivity() {
                             tvStatus.text = "⚠ Call limit reached"
                             activeCallId = null
                         }
+                        "CALL_SCREEN_SHARE_STARTED" -> {
+                            Toast.makeText(this@ChatActivity, "🖥 Peer is sharing their screen", Toast.LENGTH_SHORT).show()
+                        }
+                        "CALL_SCREEN_SHARE_STOPPED" -> {
+                            Toast.makeText(this@ChatActivity, "🖥 Peer stopped sharing", Toast.LENGTH_SHORT).show()
+                        }
                     }
                 }
             }
@@ -205,6 +212,7 @@ class ChatActivity : AppCompatActivity() {
                 lifecycleScope.launch {
                     DropOnAir.getInstance().endCall(activeCallId!!)
                     activeCallId = null
+                    amSharingScreen = false
                     tvStatus.text = "🟢 Connected"
                     btnCall.text = "📞"
                 }
@@ -220,6 +228,30 @@ class ChatActivity : AppCompatActivity() {
                     }
                 }
             }
+        }
+
+        // Long-press the call button during an active call to toggle the
+        // screen-share *signal* (phase1/screen-sharing). The platform handles
+        // the start/stop notification so the remote SDK can update its UI;
+        // capture via MediaProjection (foreground service + Notification) and
+        // adding the resulting track to the existing peer connection are the
+        // app's responsibility. See the SDK docs for the full integration.
+        btnCall.setOnLongClickListener {
+            val callId = activeCallId
+            if (callId == null) {
+                Toast.makeText(this, "Start a call first", Toast.LENGTH_SHORT).show()
+                return@setOnLongClickListener true
+            }
+            if (amSharingScreen) {
+                DropOnAir.getInstance().stopScreenShare(callId)
+                amSharingScreen = false
+                Toast.makeText(this, "🖥 Stopped sharing screen", Toast.LENGTH_SHORT).show()
+            } else {
+                DropOnAir.getInstance().startScreenShare(callId)
+                amSharingScreen = true
+                Toast.makeText(this, "🖥 Sharing screen (capture handled by app)", Toast.LENGTH_SHORT).show()
+            }
+            true
         }
 
         btnGroups.setOnClickListener {
