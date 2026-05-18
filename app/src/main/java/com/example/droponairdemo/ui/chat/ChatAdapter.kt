@@ -43,7 +43,10 @@ class ChatAdapter(
 
         h.tvSender.visibility = if (isSelf) View.GONE else View.VISIBLE
         h.tvSender.text = item.fromUserId
-        h.tvText.text   = item.text
+        val attachmentSuffix = if (item.attachments.isNotEmpty()) {
+            "\n📎 ${item.attachments.size} attachment(s) - tap-and-hold to download"
+        } else ""
+        h.tvText.text   = item.text + attachmentSuffix
         val timeSuffix  = if (item.edited && !item.deleted) "  · edited" else ""
         h.tvTime.text   = timeFmt.format(Date(item.timestamp)) + timeSuffix
 

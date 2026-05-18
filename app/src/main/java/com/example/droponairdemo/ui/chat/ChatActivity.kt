@@ -1,10 +1,14 @@
 package com.example.droponairdemo.ui.chat
 
+import android.content.Intent
+import android.net.Uri
 import android.os.Bundle
 import android.view.View
 import android.widget.Button
 import android.widget.EditText
+import android.widget.Toast
 import android.widget.TextView
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
@@ -12,11 +16,14 @@ import androidx.recyclerview.widget.RecyclerView
 import android.app.AlertDialog
 import com.droponair.sdk.DropOnAir
 import com.droponair.sdk.DropOnAirListener
+import com.droponair.sdk.model.AttachmentEncryptionType
+import com.droponair.sdk.model.AttachmentRef
 import com.droponair.sdk.model.CallEvent
 import com.droponair.sdk.model.Group
 import com.droponair.sdk.model.Message
 import com.droponair.sdk.model.MessageDelete
 import com.droponair.sdk.model.MessageEdit
+import com.droponair.sdk.model.PrepareAttachmentOptions
 import com.droponair.sdk.model.GroupMessage
 import com.droponair.sdk.model.GroupCallEvent
 import com.example.droponairdemo.R
@@ -29,6 +36,11 @@ class ChatActivity : AppCompatActivity() {
     private lateinit var myUserId: String
     private var activeCallId: String? = null
     private var activeGroupId: String? = null
+    private var pendingAttachments: List<AttachmentRef> = emptyList()
+
+    private val pickAttachment = registerForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
+        if (uri != null) onAttachmentPicked(uri)
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -61,7 +73,14 @@ class ChatActivity : AppCompatActivity() {
             }
 
             override fun onMessageReceived(message: Message) {
-                messages.add(ChatItem(message.messageId, message.fromUserId, message.text, message.timestamp, isSelf = false))
+                messages.add(ChatItem(
+                    message.messageId,
+                    message.fromUserId,
+                    message.text,
+                    message.timestamp,
+                    isSelf = false,
+                    attachments = message.attachments,
+                ))
                 adapter.notifyItemInserted(messages.lastIndex)
                 rv.scrollToPosition(messages.lastIndex)
             }
@@ -144,18 +163,36 @@ class ChatActivity : AppCompatActivity() {
         btnSend.setOnClickListener {
             val to  = etTo.text.toString().trim()
             val txt = etMsg.text.toString().trim()
-            if (to.isEmpty() || txt.isEmpty()) return@setOnClickListener
+            if (to.isEmpty()) return@setOnClickListener
+            if (txt.isEmpty() && pendingAttachments.isEmpty()) return@setOnClickListener
 
+            val attachmentsToSend = pendingAttachments
+            pendingAttachments = emptyList()
             etMsg.text.clear()
             lifecycleScope.launch {
                 try {
-                    val messageId = DropOnAir.getInstance().sendMessage(to, txt)
-                    messages.add(ChatItem(messageId, myUserId, txt, System.currentTimeMillis(), isSelf = true, toUserId = to))
+                    val messageId = DropOnAir.getInstance().sendMessage(to, txt, attachmentsToSend)
+                    messages.add(ChatItem(
+                        messageId, myUserId, txt, System.currentTimeMillis(),
+                        isSelf = true, toUserId = to, attachments = attachmentsToSend,
+                    ))
                     adapter.notifyItemInserted(messages.lastIndex)
                     rv.scrollToPosition(messages.lastIndex)
                 } catch (e: Exception) {
                     tvStatus.text = "⚠ Send error: ${e.message}"
                 }
+            }
+        }
+
+        // Long-press the send button to attach an image (phase1/attachments demo).
+        btnSend.setOnLongClickListener {
+            val to = etTo.text.toString().trim()
+            if (to.isEmpty()) {
+                Toast.makeText(this, "Set recipient first", Toast.LENGTH_SHORT).show()
+                true
+            } else {
+                pickAttachment.launch("image/*")
+                true
             }
         }
 
@@ -310,6 +347,31 @@ class ChatActivity : AppCompatActivity() {
             }
         }
     }
+
+    private fun onAttachmentPicked(uri: Uri) {
+        val to = findViewById<EditText>(R.id.etToUserId).text.toString().trim()
+        if (to.isEmpty()) return
+        val tvStatus = findViewById<TextView>(R.id.tvStatus)
+        lifecycleScope.launch {
+            try {
+                val mime = contentResolver.getType(uri) ?: "application/octet-stream"
+                val bytes = contentResolver.openInputStream(uri)?.use { it.readBytes() }
+                    ?: throw IllegalStateException("could not read attachment bytes")
+                val ref = DropOnAir.getInstance().prepareAttachmentAndUpload(
+                    bytes,
+                    PrepareAttachmentOptions(
+                        toUserId = to,
+                        mimeType = mime,
+                        encryptionType = AttachmentEncryptionType.E2EE,
+                    ),
+                )
+                pendingAttachments = pendingAttachments + ref
+                tvStatus.text = "📎 ${pendingAttachments.size} attachment(s) ready"
+            } catch (e: Exception) {
+                tvStatus.text = "⚠ Attachment error: ${e.message}"
+            }
+        }
+    }
 }
 
 data class ChatItem(
@@ -322,4 +384,6 @@ data class ChatItem(
     val toUserId: String? = null,
     val edited: Boolean = false,
     val deleted: Boolean = false,
+    /** Attachments carried by this message (phase1/attachments). */
+    val attachments: List<AttachmentRef> = emptyList(),
 )
