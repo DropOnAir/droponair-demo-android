@@ -67,6 +67,11 @@ class ChatActivity : AppCompatActivity() {
             override fun onConnected() {
                 tvStatus.text = "🟢 Connected"
                 tvStatus.setTextColor(getColor(android.R.color.holo_green_dark))
+                // Demonstrate FCM push token registration once the SDK is
+                // connected. In a real app you'd call this once per app launch
+                // after FirebaseMessaging.getInstance().token resolves and the
+                // user has granted notification permission.
+                registerFcmTokenIfAvailable()
             }
 
             override fun onDisconnected(reason: String?, willReconnect: Boolean) {
@@ -402,6 +407,36 @@ class ChatActivity : AppCompatActivity() {
             } catch (e: Exception) {
                 tvStatus.text = "⚠ Attachment error: ${e.message}"
             }
+        }
+    }
+
+    /**
+     * Fire-and-forget FCM token registration. Wrapped in reflection so this
+     * demo also runs in builds that don't bundle Firebase (the SDK call works
+     * either way; only the token retrieval needs Firebase on the classpath).
+     * The DropOnAir platform fans out a push to this device whenever a sender
+     * attaches a pushPayload to a message and we have no live WebSocket.
+     */
+    private fun registerFcmTokenIfAvailable() {
+        try {
+            val fmClass = Class.forName("com.google.firebase.messaging.FirebaseMessaging")
+            val instance = fmClass.getMethod("getInstance").invoke(null)
+            val task = fmClass.getMethod("getToken").invoke(instance)
+            val addOnSuccess = task.javaClass.getMethod("addOnSuccessListener",
+                com.google.android.gms.tasks.OnSuccessListener::class.java)
+            addOnSuccess.invoke(task, com.google.android.gms.tasks.OnSuccessListener<Any> { token ->
+                if (token is String && token.isNotBlank()) {
+                    try {
+                        DropOnAir.getInstance().registerPushToken("FCM", token)
+                    } catch (e: Exception) {
+                        android.util.Log.w("DropOnAirDemo", "push register failed: ${e.message}")
+                    }
+                }
+            })
+        } catch (e: ClassNotFoundException) {
+            // Firebase not on classpath; skip silently.
+        } catch (e: Exception) {
+            android.util.Log.w("DropOnAirDemo", "FCM token retrieval skipped: ${e.message}")
         }
     }
 }
