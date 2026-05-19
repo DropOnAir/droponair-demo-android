@@ -191,7 +191,7 @@ class ChatActivity : AppCompatActivity() {
             }
         }
 
-        // Long-press the send button to attach an image (phase1/attachments demo).
+        // Long-press the send button to attach an image.
         btnSend.setOnLongClickListener {
             val to = etTo.text.toString().trim()
             if (to.isEmpty()) {
@@ -231,8 +231,8 @@ class ChatActivity : AppCompatActivity() {
         }
 
         // Long-press the call button during an active call to toggle the
-        // screen-share *signal* (phase1/screen-sharing). The platform handles
-        // the start/stop notification so the remote SDK can update its UI;
+        // screen-share *signal*. The platform handles the start/stop
+        // notification so the remote SDK can update its UI;
         // capture via MediaProjection (foreground service + Notification) and
         // adding the resulting track to the existing peer connection are the
         // app's responsibility. See the SDK docs for the full integration.
@@ -416,6 +416,6 @@ data class ChatItem(
     val toUserId: String? = null,
     val edited: Boolean = false,
     val deleted: Boolean = false,
-    /** Attachments carried by this message (phase1/attachments). */
+    /** Attachments carried by this message. */
     val attachments: List<AttachmentRef> = emptyList(),
 )
