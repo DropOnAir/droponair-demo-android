@@ -34,7 +34,7 @@ android {
 
 dependencies {
     // DropOnAir SDK (Maven Central)
-    implementation("com.droponair:sdk-android:0.13.1")
+    implementation("com.droponair:sdk-android:0.14.0")
 
     // AndroidX + Material
     implementation("androidx.core:core-ktx:1.13.1")
