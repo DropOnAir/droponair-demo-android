@@ -34,7 +34,7 @@ android {
 
 dependencies {
     // DropOnAir SDK. Latest version: https://central.sonatype.com/artifact/com.droponair/sdk-android
-    implementation("com.droponair:sdk-android:0.22.0")
+    implementation("com.droponair:sdk-android:0.23.2")
 
     // Compile-only: the FCM push token block (ChatActivity.registerFcmTokenIfAvailable)
     // reflects FirebaseMessaging but references OnSuccessListener directly. Kept off the
